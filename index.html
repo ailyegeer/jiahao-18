@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>嘉豪的留言板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 24px 16px;
+    color: #333;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 26px; margin-bottom: 6px; color: #2d2d55; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+  textarea, input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .2s;
+    margin-bottom: 10px;
+  }
+  textarea:focus, input:focus { border-color: #667eea; }
+  textarea { min-height: 90px; resize: vertical; }
+  button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .1s, opacity .2s;
+  }
+  button:hover { opacity: .92; }
+  button:active { transform: scale(.98); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .msg {
+    border-bottom: 1px solid #f0f0f0;
+    padding: 14px 0;
+  }
+  .msg:last-child { border-bottom: none; }
+  .msg-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .msg-name { font-weight: 600; color: #5a5a8a; }
+  .msg-time { font-size: 12px; color: #aaa; }
+  .msg-content { font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .empty { text-align: center; color: #bbb; padding: 30px 0; }
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .toast.show { opacity: .95; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <h1>嘉豪的留言板</h1>
+    <div class="sub">留个脚印，说点什么～</div>
+    <input id="name" placeholder="你的昵称（≤30字）" maxlength="30" />
+    <textarea id="content" placeholder="想说的话（≤500字）" maxlength="500"></textarea>
+    <button id="submitBtn">提交留言</button>
+  </div>
+  <div class="card">
+    <div id="list"><div class="empty">加载中...</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const listEl = document.getElementById('list');
+const submitBtn = document.getElementById('submitBtn');
+const toast = document.getElementById('toast');
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getMonth()+1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function render(messages) {
+  if (!messages.length) {
+    listEl.innerHTML = '<div class="empty">还没有留言，来抢沙发～</div>';
+    return;
+  }
+  listEl.innerHTML = messages.map(m => `
+    <div class="msg">
+      <div class="msg-head">
+        <span class="msg-name">${escapeHtml(m.name)}</span>
+        <span class="msg-time">${fmtTime(m.time)}</span>
+      </div>
+      <div class="msg-content">${escapeHtml(m.content)}</div>
+    </div>
+  `).join('');
+}
+
+async function load() {
+  try {
+    const res = await fetch('/api/messages');
+    const data = await res.json();
+    render(data.messages || []);
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty">加载失败，请刷新重试</div>';
+  }
+}
+
+submitBtn.addEventListener('click', async () => {
+  const name = document.getElementById('name').value.trim();
+  const content = document.getElementById('content').value.trim();
+  if (!name || !content) { showToast('昵称和内容都要填哦'); return; }
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, content }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || '提交失败'); return; }
+    document.getElementById('content').value = '';
+    render(data.messages || []);
+    showToast('提交成功！');
+  } catch (e) {
+    showToast('网络错误，请稍后再试');
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+load();
+</script>
+</body>
+</html>
